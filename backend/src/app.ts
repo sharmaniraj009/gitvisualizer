@@ -1,0 +1,21 @@
+import express from 'express';
+import cors from 'cors';
+import { repositoryRoutes } from './routes/repository.routes.js';
+import { uploadRoutes } from './routes/upload.routes.js';
+
+export const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.use('/api', repositoryRoutes);
+app.use('/api', uploadRoutes);
+
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Error:', err.message);
+  res.status(500).json({ error: err.message });
+});
