@@ -21,6 +21,18 @@ interface CommitNodeProps {
   selected?: boolean;
 }
 
+// Custom comparison to prevent unnecessary re-renders
+function arePropsEqual(prev: CommitNodeProps, next: CommitNodeProps): boolean {
+  // Only re-render if these specific properties change
+  return (
+    prev.data.commit.hash === next.data.commit.hash &&
+    prev.data.isCompact === next.data.isCompact &&
+    prev.data.isHighlighted === next.data.isHighlighted &&
+    prev.data.color === next.data.color &&
+    prev.selected === next.selected
+  );
+}
+
 export const CommitNode = memo(({ data, selected }: CommitNodeProps) => {
   const { commit, color, isCompact, isHighlighted } = data;
 
@@ -157,6 +169,6 @@ export const CommitNode = memo(({ data, selected }: CommitNodeProps) => {
       />
     </div>
   );
-});
+}, arePropsEqual);
 
 CommitNode.displayName = 'CommitNode';
