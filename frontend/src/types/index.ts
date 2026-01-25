@@ -199,3 +199,28 @@ export interface SubmodulesResponse {
   data?: Submodule[];
   error?: string;
 }
+
+// Date range filter types
+export interface DateRange {
+  since?: string; // ISO date string
+  until?: string; // ISO date string
+}
+
+// Branch comparison types
+export interface BranchComparison {
+  baseBranch: string;
+  compareBranch: string;
+  aheadCount: number;
+  behindCount: number;
+  aheadCommits: Commit[];
+  behindCommits: Commit[];
+  files: FileDiff[];
+  totalAdditions: number;
+  totalDeletions: number;
+}
+
+export interface BranchComparisonResponse {
+  success: boolean;
+  data?: BranchComparison;
+  error?: string;
+}

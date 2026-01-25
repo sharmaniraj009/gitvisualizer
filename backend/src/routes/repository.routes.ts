@@ -111,6 +111,8 @@ repositoryRoutes.post('/repository/commits', validatePath, async (req: Request, 
     const maxCount = parseInt(req.query.maxCount as string) || 500;
     const skip = parseInt(req.query.skip as string) || 0;
     const firstParent = req.query.firstParent === 'true';
+    const since = req.query.since as string | undefined;
+    const until = req.query.until as string | undefined;
 
     const isValid = await gitService.validateRepository(path);
     if (!isValid) {
@@ -118,7 +120,7 @@ repositoryRoutes.post('/repository/commits', validatePath, async (req: Request, 
       return;
     }
 
-    const result = await gitService.getCommitsPaginated(path, { maxCount, skip, firstParent });
+    const result = await gitService.getCommitsPaginated(path, { maxCount, skip, firstParent, since, until });
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -257,6 +259,30 @@ repositoryRoutes.post('/repository/submodules', validatePath, async (req: Reques
 
     const submodules = await gitService.getSubmodules(path);
     res.json({ success: true, data: submodules });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// Compare two branches
+repositoryRoutes.post('/repository/branch-compare', validatePath, async (req: Request, res: Response) => {
+  try {
+    const path = req.body.validatedPath;
+    const { baseBranch, compareBranch } = req.body;
+
+    if (!baseBranch || !compareBranch) {
+      res.status(400).json({ success: false, error: 'baseBranch and compareBranch are required' });
+      return;
+    }
+
+    const isValid = await gitService.validateRepository(path);
+    if (!isValid) {
+      res.status(400).json({ success: false, error: 'Not a valid git repository' });
+      return;
+    }
+
+    const comparison = await gitService.compareBranches(path, baseBranch, compareBranch);
+    res.json({ success: true, data: comparison });
   } catch (error) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

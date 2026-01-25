@@ -11,6 +11,8 @@ import type {
   ContributorStats,
   ActivityDay,
   Submodule,
+  DateRange,
+  BranchComparison,
 } from '../types';
 import {
   loadRepository,
@@ -27,6 +29,7 @@ import {
   getContributorStats,
   getActivityHeatmap,
   getSubmodules,
+  compareBranches,
 } from '../api/gitApi';
 
 export type LoadMode = 'full' | 'paginated' | 'simplified';
@@ -73,6 +76,17 @@ interface RepositoryState {
   // Submodule state
   submodules: Submodule[] | null;
 
+  // Date filter state
+  dateFilter: DateRange | null;
+
+  // Branch comparison state
+  branchComparison: BranchComparison | null;
+  showBranchComparePanel: boolean;
+  compareBaseBranch: string | null;
+  compareTargetBranch: string | null;
+  isLoadingComparison: boolean;
+  comparisonError: string | null;
+
   // Actions
   loadRepo: (path: string) => Promise<void>;
   loadRepoWithMode: (path: string, mode: LoadMode) => Promise<void>;
@@ -101,6 +115,15 @@ interface RepositoryState {
   fetchStats: () => Promise<void>;
   toggleStatsPanel: () => void;
   fetchSubmodules: () => Promise<void>;
+
+  // Date filter actions
+  setDateFilter: (dateRange: DateRange | null) => void;
+  applyDateFilter: () => Promise<void>;
+
+  // Branch comparison actions
+  toggleBranchComparePanel: () => void;
+  setCompareBranches: (baseBranch: string | null, targetBranch: string | null) => void;
+  fetchBranchComparison: () => Promise<void>;
 }
 
 export const useRepositoryStore = create<RepositoryState>((set, get) => ({
@@ -141,6 +164,17 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
 
   // Submodule state
   submodules: null,
+
+  // Date filter state
+  dateFilter: null,
+
+  // Branch comparison state
+  branchComparison: null,
+  showBranchComparePanel: false,
+  compareBaseBranch: null,
+  compareTargetBranch: null,
+  isLoadingComparison: false,
+  comparisonError: null,
 
   loadRepo: async (path: string) => {
     // Abort any existing stream
@@ -511,6 +545,14 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       statsError: null,
       showStatsPanel: false,
       submodules: null,
+      // Reset date filter and branch comparison state
+      dateFilter: null,
+      branchComparison: null,
+      showBranchComparePanel: false,
+      compareBaseBranch: null,
+      compareTargetBranch: null,
+      isLoadingComparison: false,
+      comparisonError: null,
     });
   },
 
@@ -658,6 +700,99 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     } catch {
       // Silently fail - submodules are optional
       set({ submodules: [] });
+    }
+  },
+
+  // Date filter actions
+  setDateFilter: (dateRange: DateRange | null) => {
+    set({ dateFilter: dateRange });
+  },
+
+  applyDateFilter: async () => {
+    const { repository, dateFilter, loadMode } = get();
+    if (!repository) return;
+
+    set({
+      isLoading: true,
+      loadingMessage: 'Filtering commits by date...',
+      loadingProgress: 30,
+    });
+
+    try {
+      const result = await getCommitsPaginated(repository.path, {
+        maxCount: 1000,
+        skip: 0,
+        firstParent: loadMode === 'simplified',
+        dateRange: dateFilter || undefined,
+      });
+
+      set((state) => ({
+        repository: state.repository
+          ? {
+              ...state.repository,
+              commits: result.commits,
+              loadedCommitCount: result.commits.length,
+              totalCommitCount: result.total,
+            }
+          : null,
+        isLoading: false,
+        loadingProgress: 100,
+        loadingMessage: '',
+      }));
+    } catch (error) {
+      set({
+        error: (error as Error).message,
+        isLoading: false,
+        loadingProgress: -1,
+        loadingMessage: '',
+      });
+    }
+  },
+
+  // Branch comparison actions
+  toggleBranchComparePanel: () => {
+    const { showBranchComparePanel, repository } = get();
+    const newShow = !showBranchComparePanel;
+    set({ showBranchComparePanel: newShow });
+
+    // Set default branches when opening
+    if (newShow && repository) {
+      const currentBranch = repository.currentBranch;
+      const localBranches = repository.branches.filter(b => !b.isRemote);
+      const otherBranch = localBranches.find(b => b.name !== currentBranch)?.name || null;
+      set({
+        compareBaseBranch: currentBranch,
+        compareTargetBranch: otherBranch,
+        branchComparison: null,
+        comparisonError: null,
+      });
+    }
+  },
+
+  setCompareBranches: (baseBranch: string | null, targetBranch: string | null) => {
+    set({
+      compareBaseBranch: baseBranch,
+      compareTargetBranch: targetBranch,
+      branchComparison: null,
+      comparisonError: null,
+    });
+  },
+
+  fetchBranchComparison: async () => {
+    const { repository, compareBaseBranch, compareTargetBranch } = get();
+    if (!repository || !compareBaseBranch || !compareTargetBranch) return;
+
+    set({ isLoadingComparison: true, comparisonError: null });
+
+    try {
+      const comparison = await compareBranches(
+        repository.path,
+        compareBaseBranch,
+        compareTargetBranch
+      );
+      set({ branchComparison: comparison, isLoadingComparison: false });
+    } catch (error) {
+      set({ comparisonError: (error as Error).message, isLoadingComparison: false });
     }
   },
 }));

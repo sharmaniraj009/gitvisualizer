@@ -1,6 +1,7 @@
 import { useRepositoryStore } from '../../store/repositoryStore';
 import { getBranchColor } from '../../utils/branchColors';
 import { SubmoduleList } from './SubmoduleList';
+import { DateRangeFilter } from '../filters/DateRangeFilter';
 
 export function BranchList() {
   const { repository, searchQuery, setSearchQuery, loadMoreCommits, isLoading, loadMode, submodules } =
@@ -50,6 +51,9 @@ export function BranchList() {
           )}
         </div>
       </div>
+
+      {/* Date Range Filter */}
+      <DateRangeFilter />
 
       {/* Repository Info */}
       <div className="mb-4 p-3 bg-gray-50 rounded-lg">

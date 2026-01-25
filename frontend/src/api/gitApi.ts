@@ -22,6 +22,9 @@ import type {
   ActivityResponse,
   Submodule,
   SubmodulesResponse,
+  DateRange,
+  BranchComparison,
+  BranchComparisonResponse,
 } from '../types';
 
 const API_BASE = '/api';
@@ -63,14 +66,22 @@ export async function getRepoMetadata(path: string): Promise<RepositoryMetadata>
 // Get paginated commits
 export async function getCommitsPaginated(
   path: string,
-  options: { maxCount?: number; skip?: number; firstParent?: boolean } = {}
+  options: { maxCount?: number; skip?: number; firstParent?: boolean; dateRange?: DateRange } = {}
 ): Promise<PaginatedCommits> {
-  const { maxCount = 500, skip = 0, firstParent = false } = options;
+  const { maxCount = 500, skip = 0, firstParent = false, dateRange } = options;
   const params = new URLSearchParams({
     maxCount: maxCount.toString(),
     skip: skip.toString(),
     firstParent: firstParent.toString(),
   });
+
+  // Add date range filters if provided
+  if (dateRange?.since) {
+    params.set('since', dateRange.since);
+  }
+  if (dateRange?.until) {
+    params.set('until', dateRange.until);
+  }
 
   const response = await fetch(`${API_BASE}/repository/commits?${params}`, {
     method: 'POST',
@@ -505,6 +516,28 @@ export async function getSubmodules(repoPath: string): Promise<Submodule[]> {
 
   if (!response.ok || !data.success) {
     throw new Error(data.error || 'Failed to get submodules');
+  }
+
+  return data.data!;
+}
+
+// Branch comparison API
+
+export async function compareBranches(
+  repoPath: string,
+  baseBranch: string,
+  compareBranch: string
+): Promise<BranchComparison> {
+  const response = await fetch(`${API_BASE}/repository/branch-compare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: repoPath, baseBranch, compareBranch }),
+  });
+
+  const data: BranchComparisonResponse = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to compare branches');
   }
 
   return data.data!;

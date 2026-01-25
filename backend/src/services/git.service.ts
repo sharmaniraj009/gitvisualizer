@@ -50,6 +50,8 @@ export interface PaginationOptions {
   maxCount?: number; // Default: 500
   skip?: number; // Offset for pagination
   firstParent?: boolean; // Only follow first parent (simplified view)
+  since?: string; // ISO date string for --since filter
+  until?: string; // ISO date string for --until filter
 }
 
 export interface PaginatedCommits {
@@ -139,6 +141,19 @@ export interface Submodule {
   url: string;
   currentCommit: string;
   initialized: boolean;
+}
+
+// Branch comparison interfaces
+export interface BranchComparison {
+  baseBranch: string;
+  compareBranch: string;
+  aheadCount: number;
+  behindCount: number;
+  aheadCommits: Commit[];
+  behindCommits: Commit[];
+  files: FileDiff[];
+  totalAdditions: number;
+  totalDeletions: number;
 }
 
 function parseRefs(refsString: string): RefInfo[] {
@@ -413,7 +428,7 @@ class GitService {
     options: PaginationOptions = {}
   ): Promise<PaginatedCommits> {
     const git = this.getGit(repoPath);
-    const { maxCount = 500, skip = 0, firstParent = false } = options;
+    const { maxCount = 500, skip = 0, firstParent = false, since, until } = options;
 
     const format = {
       hash: '%H',
@@ -439,27 +454,47 @@ class GitService {
       refs: string;
     };
 
-    // First-parent mode significantly reduces commits for complex histories
-    const logOptions = firstParent
-      ? {
-          '--all': null,
-          '--date-order': null,
-          '--first-parent': null,
-          maxCount: maxCount + 1,
-          '--skip': skip,
-          format,
-        }
-      : {
-          '--all': null,
-          '--date-order': null,
-          maxCount: maxCount + 1,
-          '--skip': skip,
-          format,
-        };
+    // Build log options with optional date filters
+    const logOptions: Record<string, any> = {
+      '--all': null,
+      '--date-order': null,
+      maxCount: maxCount + 1,
+      '--skip': skip,
+      format,
+    };
+
+    if (firstParent) {
+      logOptions['--first-parent'] = null;
+    }
+
+    if (since) {
+      logOptions['--since'] = since;
+    }
+
+    if (until) {
+      logOptions['--until'] = until;
+    }
+
+    // Get total count with date filters if specified
+    const getTotalWithFilters = async (): Promise<number> => {
+      if (!since && !until) {
+        return this.getTotalCommitCount(git);
+      }
+      // Count commits with date filters using raw git command
+      const args = ['rev-list', '--all', '--count'];
+      if (since) args.push(`--since=${since}`);
+      if (until) args.push(`--until=${until}`);
+      try {
+        const result = await git.raw(args);
+        return parseInt(result.trim(), 10);
+      } catch {
+        return 0;
+      }
+    };
 
     const [log, total] = await Promise.all([
       git.log(logOptions),
-      this.getTotalCommitCount(git),
+      getTotalWithFilters(),
     ]);
 
     const hasMore = log.all.length > maxCount;
@@ -1075,6 +1110,151 @@ class GitService {
     }
 
     return submodules.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  // ===== BRANCH COMPARISON METHODS =====
+
+  async compareBranches(
+    repoPath: string,
+    baseBranch: string,
+    compareBranch: string
+  ): Promise<BranchComparison> {
+    const git = this.getGit(repoPath);
+
+    // Get commits ahead (in compare but not in base)
+    const aheadResult = await git.raw([
+      'log',
+      '--oneline',
+      `${baseBranch}..${compareBranch}`,
+      '--format=%H|%h|%s|%an|%ae|%aI|%P|%D',
+    ]);
+
+    // Get commits behind (in base but not in compare)
+    const behindResult = await git.raw([
+      'log',
+      '--oneline',
+      `${compareBranch}..${baseBranch}`,
+      '--format=%H|%h|%s|%an|%ae|%aI|%P|%D',
+    ]);
+
+    const parseCommitLine = (line: string): Commit | null => {
+      const parts = line.split('|');
+      if (parts.length < 7) return null;
+      const [hash, shortHash, message, authorName, authorEmail, date, parents, refs = ''] = parts;
+      return {
+        hash,
+        shortHash,
+        message,
+        body: '',
+        author: { name: authorName, email: authorEmail },
+        date,
+        parents: parents ? parents.split(' ').filter(Boolean) : [],
+        refs: parseRefs(refs),
+      };
+    };
+
+    const aheadCommits = aheadResult
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(parseCommitLine)
+      .filter((c): c is Commit => c !== null);
+
+    const behindCommits = behindResult
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(parseCommitLine)
+      .filter((c): c is Commit => c !== null);
+
+    // Get diff stats between branches
+    const numstat = await git.raw([
+      'diff',
+      '--numstat',
+      '--find-renames',
+      '--find-copies',
+      baseBranch,
+      compareBranch,
+    ]);
+
+    const nameStatus = await git.raw([
+      'diff',
+      '--name-status',
+      '--find-renames',
+      '--find-copies',
+      baseBranch,
+      compareBranch,
+    ]);
+
+    // Parse name-status
+    const statusMap = new Map<string, { status: string; oldPath?: string }>();
+    for (const line of nameStatus.trim().split('\n').filter(Boolean)) {
+      const parts = line.split('\t');
+      const status = parts[0];
+      if (status.startsWith('R') || status.startsWith('C')) {
+        statusMap.set(parts[2], { status: status[0], oldPath: parts[1] });
+      } else {
+        statusMap.set(parts[1], { status: status[0] });
+      }
+    }
+
+    // Parse numstat
+    const files: FileDiff[] = [];
+    let totalAdditions = 0;
+    let totalDeletions = 0;
+
+    for (const line of numstat.trim().split('\n').filter(Boolean)) {
+      const parts = line.split('\t');
+      const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
+      const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
+      const binary = parts[0] === '-' && parts[1] === '-';
+
+      let filePath = parts[2];
+      if (filePath.includes(' => ')) {
+        const match = filePath.match(/^(.*)?\{(.+) => (.+)\}(.*)$/) ||
+                      filePath.match(/^(.+) => (.+)$/);
+        if (match) {
+          if (match.length === 5) {
+            filePath = match[1] + match[3] + match[4];
+          } else {
+            filePath = match[2];
+          }
+        }
+      }
+
+      const statusInfo = statusMap.get(filePath) || { status: 'M' };
+      const statusChar = statusInfo.status;
+
+      let status: FileDiff['status'] = 'modified';
+      if (statusChar === 'A') status = 'added';
+      else if (statusChar === 'D') status = 'deleted';
+      else if (statusChar === 'R') status = 'renamed';
+      else if (statusChar === 'C') status = 'copied';
+
+      files.push({
+        path: filePath,
+        oldPath: statusInfo.oldPath,
+        status,
+        additions,
+        deletions,
+        binary,
+      });
+
+      totalAdditions += additions;
+      totalDeletions += deletions;
+    }
+
+    return {
+      baseBranch,
+      compareBranch,
+      aheadCount: aheadCommits.length,
+      behindCount: behindCommits.length,
+      aheadCommits,
+      behindCommits,
+      files,
+      totalAdditions,
+      totalDeletions,
+    };
   }
 }
 
