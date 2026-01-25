@@ -117,13 +117,14 @@ class GitHubService {
    */
   parseRemoteUrl(url: string): GitHubRepoInfo | null {
     // Handle various GitHub URL formats
+    // Note: Repo names can contain dots (e.g., username.github.io)
     const patterns = [
       // HTTPS: https://github.com/owner/repo.git or https://github.com/owner/repo
-      /^https?:\/\/(?:www\.)?github\.com\/([^\/]+)\/([^\/\.]+)(?:\.git)?$/,
+      /^https?:\/\/(?:www\.)?github\.com\/([^\/]+)\/(.+?)(?:\.git)?$/,
       // SSH: git@github.com:owner/repo.git or git@github.com:owner/repo
-      /^git@github\.com:([^\/]+)\/([^\/\.]+)(?:\.git)?$/,
+      /^git@github\.com:([^\/]+)\/(.+?)(?:\.git)?$/,
       // Git protocol: git://github.com/owner/repo.git
-      /^git:\/\/github\.com\/([^\/]+)\/([^\/\.]+)(?:\.git)?$/,
+      /^git:\/\/github\.com\/([^\/]+)\/(.+?)(?:\.git)?$/,
     ];
 
     for (const pattern of patterns) {

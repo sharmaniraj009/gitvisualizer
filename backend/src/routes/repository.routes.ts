@@ -319,7 +319,7 @@ repositoryRoutes.post('/repository/branch-compare', validatePath, async (req: Re
 
 repositoryRoutes.post('/repository/clone', async (req: Request, res: Response) => {
   try {
-    const { url, shallow = true } = req.body;
+    const { url, shallow = true, token } = req.body;
 
     if (!url || typeof url !== 'string') {
       res.status(400).json({ error: 'URL is required' });
@@ -331,14 +331,25 @@ repositoryRoutes.post('/repository/clone', async (req: Request, res: Response) =
       return;
     }
 
-    // Clone the repository with specified depth option
-    const repoPath = await gitService.cloneRepository(url, { shallow });
+    // Clone the repository with specified depth option and optional token
+    const repoPath = await gitService.cloneRepository(url, {
+      shallow,
+      token: token || undefined,
+    });
 
     // Get repository data
     const repository = await gitService.getRepository(repoPath);
 
     res.json({ success: true, data: repository });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    const errorMessage = (error as Error).message;
+
+    // Return 401 for auth errors to trigger frontend auth flow
+    if (errorMessage.startsWith('AUTH_REQUIRED:')) {
+      res.status(401).json({ error: errorMessage, authRequired: true });
+      return;
+    }
+
+    res.status(500).json({ error: errorMessage });
   }
 });

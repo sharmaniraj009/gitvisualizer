@@ -6,6 +6,7 @@ import { CommitDetails } from './components/panels/CommitDetails';
 import { SubmoduleDetails } from './components/panels/SubmoduleDetails';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { LargeRepoWarning } from './components/ui/LargeRepoWarning';
+import { AuthTokenModal } from './components/ui/AuthTokenModal';
 import { StatsPanel } from './components/stats/StatsPanel';
 import { BranchComparePanel } from './components/compare/BranchComparePanel';
 import { RepositoryBreadcrumb } from './components/navigation/RepositoryBreadcrumb';
@@ -128,6 +129,9 @@ function App() {
 
       {/* Branch Compare Panel Modal */}
       <BranchComparePanel />
+
+      {/* Auth Token Modal for Private Repos */}
+      <AuthTokenModal />
     </div>
   );
 }

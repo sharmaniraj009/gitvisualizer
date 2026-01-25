@@ -230,15 +230,41 @@ class GitService {
     return match ? match[1].replace('.git', '') : 'repository';
   }
 
+  /**
+   * Injects a token into a git URL for authenticated cloning.
+   * Supports GitHub, GitLab, and Bitbucket URL formats.
+   */
+  private injectTokenIntoUrl(url: string, token: string): string {
+    try {
+      const urlObj = new URL(url);
+
+      // Determine the auth format based on the host
+      if (urlObj.host.includes('gitlab')) {
+        // GitLab uses oauth2:TOKEN format
+        urlObj.username = 'oauth2';
+        urlObj.password = token;
+      } else {
+        // GitHub and others use TOKEN as username
+        urlObj.username = token;
+        urlObj.password = '';
+      }
+
+      return urlObj.toString();
+    } catch {
+      // If URL parsing fails, return original
+      return url;
+    }
+  }
+
   async cloneRepository(
     url: string,
-    options: { shallow?: boolean; depth?: number } = {}
+    options: { shallow?: boolean; depth?: number; token?: string } = {}
   ): Promise<string> {
     if (!this.validateGitUrl(url)) {
       throw new Error('Invalid git repository URL');
     }
 
-    const { shallow = true, depth = 500 } = options;
+    const { shallow = true, depth = 500, token } = options;
 
     const repoName = this.extractRepoName(url);
     const tempDir = path.join(os.tmpdir(), `gitvis-${repoName}-${Date.now()}`);
@@ -255,13 +281,32 @@ class GitService {
         cloneArgs.push('--depth', depth.toString());
       }
 
-      await git.clone(url, tempDir, cloneArgs);
+      // Use authenticated URL if token provided
+      const cloneUrl = token ? this.injectTokenIntoUrl(url, token) : url;
+
+      await git.clone(cloneUrl, tempDir, cloneArgs);
 
       return tempDir;
     } catch (error) {
       // Clean up on failure
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      throw new Error(`Failed to clone repository: ${(error as Error).message}`);
+
+      const errorMessage = (error as Error).message;
+
+      // Detect authentication errors and provide helpful message
+      if (
+        errorMessage.includes('Authentication failed') ||
+        errorMessage.includes('could not read Username') ||
+        errorMessage.includes('terminal prompts disabled') ||
+        errorMessage.includes('401') ||
+        errorMessage.includes('403')
+      ) {
+        throw new Error(
+          'AUTH_REQUIRED: This repository requires authentication. Please provide a personal access token.'
+        );
+      }
+
+      throw new Error(`Failed to clone repository: ${errorMessage}`);
     }
   }
 
@@ -557,40 +602,35 @@ class GitService {
     const git = this.getGit(repoPath);
 
     try {
-      const log = await git.log({
-        from: hash,
-        to: hash,
-        format: {
-          hash: '%H',
-          shortHash: '%h',
-          message: '%s',
-          body: '%b',
-          authorName: '%an',
-          authorEmail: '%ae',
-          date: '%aI',
-          parents: '%P',
-          refs: '%D',
-        },
-        '-1': null,
-      });
+      // Use a unique delimiter to separate fields reliably
+      const DELIM = '<<<GITVIS_DELIM>>>';
+      const result = await git.raw([
+        'show',
+        '--no-patch',
+        `--format=%H${DELIM}%h${DELIM}%s${DELIM}%b${DELIM}%an${DELIM}%ae${DELIM}%aI${DELIM}%P${DELIM}%D`,
+        hash,
+      ]);
 
-      if (log.all.length === 0) return null;
+      const parts = result.trim().split(DELIM);
+      if (parts.length < 8) return null;
 
-      const entry = log.all[0];
+      const [fullHash, shortHash, message, body, authorName, authorEmail, date, parents, refs = ''] = parts;
+
       return {
-        hash: entry.hash,
-        shortHash: entry.shortHash,
-        message: entry.message,
-        body: entry.body,
+        hash: fullHash,
+        shortHash: shortHash,
+        message: message,
+        body: body.trim(),
         author: {
-          name: entry.authorName,
-          email: entry.authorEmail,
+          name: authorName,
+          email: authorEmail,
         },
-        date: entry.date,
-        parents: entry.parents ? entry.parents.split(' ').filter(Boolean) : [],
-        refs: parseRefs(entry.refs),
+        date: date,
+        parents: parents ? parents.split(' ').filter(Boolean) : [],
+        refs: parseRefs(refs),
       };
-    } catch {
+    } catch (error) {
+      console.error('getCommitDetails error:', error);
       return null;
     }
   }

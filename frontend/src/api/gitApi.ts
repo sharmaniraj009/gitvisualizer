@@ -242,23 +242,37 @@ export function isGitUrl(input: string): boolean {
   return patterns.some((pattern) => pattern.test(input.trim()));
 }
 
+// Custom error class for authentication required errors
+export class AuthRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthRequiredError';
+  }
+}
+
 export async function cloneRepository(
   url: string,
-  options: { shallow?: boolean } = {}
+  options: { shallow?: boolean; token?: string } = {}
 ): Promise<Repository> {
-  const { shallow = true } = options;
+  const { shallow = true, token } = options;
 
   const response = await fetch(`${API_BASE}/repository/clone`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ url, shallow }),
+    body: JSON.stringify({ url, shallow, token }),
   });
 
-  const data: LoadRepositoryResponse = await response.json();
+  const data = await response.json();
 
   if (!response.ok || !data.success) {
+    // Check if this is an auth error
+    if (response.status === 401 || data.authRequired) {
+      throw new AuthRequiredError(
+        'This repository requires authentication. Please provide a personal access token.'
+      );
+    }
     throw new Error(data.error || 'Failed to clone repository');
   }
 

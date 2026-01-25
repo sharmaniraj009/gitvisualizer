@@ -22,6 +22,7 @@ import {
   uploadRepository,
   uploadFolder,
   cloneRepository,
+  AuthRequiredError,
   getRepoStats,
   streamRepository,
   getCommitsPaginated,
@@ -127,6 +128,9 @@ interface RepositoryState {
   // Branch filter state
   selectedBranchFilter: string | null;
 
+  // Tag filter state
+  selectedTagFilter: string | null;
+
   // Branch comparison state
   branchComparison: BranchComparison | null;
   showBranchComparePanel: boolean;
@@ -143,11 +147,19 @@ interface RepositoryState {
   };
   highlightedCommits: Set<string>; // Parent and child hashes of selected commit
 
+  // Auth modal state (for private repos)
+  showAuthModal: boolean;
+  pendingCloneUrl: string | null;
+  pendingCloneShallow: boolean;
+  cloneToken: string | null; // Stored token for reuse
+
   // Actions
   loadRepo: (path: string) => Promise<void>;
   loadRepoWithMode: (path: string, mode: LoadMode) => Promise<void>;
   loadMoreCommits: () => Promise<void>;
-  cloneRepo: (url: string, options?: { shallow?: boolean }) => Promise<void>;
+  cloneRepo: (url: string, options?: { shallow?: boolean; token?: string }) => Promise<void>;
+  dismissAuthModal: () => void;
+  retryCloneWithToken: (token: string, saveToken?: boolean) => Promise<void>;
   uploadRepo: (file: File) => Promise<void>;
   uploadFolderRepo: (files: FileList) => Promise<void>;
   setSelectedCommit: (commit: Commit | null) => void;
@@ -178,6 +190,9 @@ interface RepositoryState {
 
   // Branch filter actions
   setSelectedBranchFilter: (branch: string | null) => void;
+
+  // Tag filter actions
+  setSelectedTagFilter: (tag: string | null) => void;
 
   // Branch comparison actions
   toggleBranchComparePanel: () => void;
@@ -258,6 +273,9 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   // Branch filter state
   selectedBranchFilter: null,
 
+  // Tag filter state
+  selectedTagFilter: null,
+
   // Branch comparison state
   branchComparison: null,
   showBranchComparePanel: false,
@@ -273,6 +291,12 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     colorByAuthor: false,
   },
   highlightedCommits: new Set<string>(),
+
+  // Auth modal state (for private repos)
+  showAuthModal: false,
+  pendingCloneUrl: null,
+  pendingCloneShallow: true,
+  cloneToken: localStorage.getItem('clone_token'),
 
   loadRepo: async (path: string) => {
     // Abort any existing stream
@@ -471,8 +495,12 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     }
   },
 
-  cloneRepo: async (url: string, options: { shallow?: boolean } = {}) => {
-    const { shallow = true } = options;
+  cloneRepo: async (url: string, options: { shallow?: boolean; token?: string } = {}) => {
+    const { shallow = true, token } = options;
+    const { cloneToken } = get();
+
+    // Use provided token, or fall back to stored token
+    const authToken = token || cloneToken || undefined;
 
     set({
       isLoading: true,
@@ -488,7 +516,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
           : 'Downloading full history (this may take a while)...',
         loadingProgress: 30,
       });
-      const repository = await cloneRepository(url, { shallow });
+      const repository = await cloneRepository(url, { shallow, token: authToken });
 
       // Check if it's a large repo after cloning
       const stats = await getRepoStats(repository.path);
@@ -519,6 +547,20 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
         loadingMessage: '',
       });
     } catch (error) {
+      // Check if this is an auth error
+      if (error instanceof AuthRequiredError) {
+        set({
+          isLoading: false,
+          loadingProgress: -1,
+          loadingMessage: '',
+          showAuthModal: true,
+          pendingCloneUrl: url,
+          pendingCloneShallow: shallow,
+          error: null,
+        });
+        return;
+      }
+
       set({
         error: (error as Error).message,
         isLoading: false,
@@ -526,6 +568,38 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
         loadingMessage: '',
       });
     }
+  },
+
+  dismissAuthModal: () => {
+    set({
+      showAuthModal: false,
+      pendingCloneUrl: null,
+      pendingCloneShallow: true,
+    });
+  },
+
+  retryCloneWithToken: async (token: string, saveToken: boolean = true) => {
+    const { pendingCloneUrl, pendingCloneShallow } = get();
+
+    if (!pendingCloneUrl) return;
+
+    // Save token if requested
+    if (saveToken) {
+      localStorage.setItem('clone_token', token);
+      set({ cloneToken: token });
+    }
+
+    // Close modal
+    set({
+      showAuthModal: false,
+      pendingCloneUrl: null,
+    });
+
+    // Retry clone with token
+    await get().cloneRepo(pendingCloneUrl, {
+      shallow: pendingCloneShallow,
+      token,
+    });
   },
 
   uploadRepo: async (file: File) => {
@@ -678,9 +752,10 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       statsError: null,
       showStatsPanel: false,
       submodules: null,
-      // Reset date filter and branch comparison state
+      // Reset date filter, branch/tag filter and branch comparison state
       dateFilter: null,
       selectedBranchFilter: null,
+      selectedTagFilter: null,
       branchComparison: null,
       showBranchComparePanel: false,
       compareBaseBranch: null,
@@ -902,6 +977,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
 
     set({
       selectedBranchFilter: branch,
+      selectedTagFilter: null, // Clear tag filter when branch filter is set
       isLoading: true,
       loadingMessage: branch ? `Loading commits from ${branch}...` : 'Loading all commits...',
       loadingProgress: 30,
@@ -914,6 +990,55 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
         firstParent: loadMode === 'simplified',
         dateRange: dateFilter || undefined,
         branch: branch || undefined,
+      });
+
+      set((state) => {
+        if (!state.repository) {
+          return { isLoading: false, loadingProgress: 100, loadingMessage: '' };
+        }
+        return {
+          repository: {
+            ...state.repository,
+            commits: result.commits,
+            loadedCommitCount: result.commits.length,
+            totalCommitCount: result.total,
+          },
+          adjacencyMap: buildAdjacencyMap(result.commits),
+          isLoading: false,
+          loadingProgress: 100,
+          loadingMessage: '',
+        };
+      });
+    } catch (error) {
+      set({
+        error: (error as Error).message,
+        isLoading: false,
+        loadingProgress: -1,
+        loadingMessage: '',
+      });
+    }
+  },
+
+  // Tag filter actions
+  setSelectedTagFilter: async (tag: string | null) => {
+    const { repository, dateFilter, loadMode } = get();
+    if (!repository) return;
+
+    set({
+      selectedTagFilter: tag,
+      selectedBranchFilter: null, // Clear branch filter when tag filter is set
+      isLoading: true,
+      loadingMessage: tag ? `Loading commits from tag ${tag}...` : 'Loading all commits...',
+      loadingProgress: 30,
+    });
+
+    try {
+      const result = await getCommitsPaginated(repository.path, {
+        maxCount: 1000,
+        skip: 0,
+        firstParent: loadMode === 'simplified',
+        dateRange: dateFilter || undefined,
+        branch: tag || undefined, // Tags work like branches in git log
       });
 
       set((state) => {
@@ -1050,9 +1175,17 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
 
     try {
       const repoInfo = await getGitHubRepoInfo(repository.path);
-      set({ githubRepoInfo: repoInfo, githubError: null });
+      // If null is returned, set isGitHub: false so UI doesn't get stuck
+      set({
+        githubRepoInfo: repoInfo || { isGitHub: false, owner: '', repo: '' },
+        githubError: null,
+      });
     } catch (error) {
-      set({ githubRepoInfo: null, githubError: (error as Error).message });
+      // Set isGitHub: false on error so UI can show proper state instead of loading forever
+      set({
+        githubRepoInfo: { isGitHub: false, owner: '', repo: '' },
+        githubError: (error as Error).message,
+      });
     }
   },
 
