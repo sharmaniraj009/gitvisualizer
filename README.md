@@ -32,7 +32,7 @@ A full-stack web application for interactive visualization and analysis of Git r
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/gitvisualizer.git
+git clone https://github.com/sharmaniraj009/gitvisualizer.git
 cd gitvisualizer
 ```
 
@@ -59,12 +59,12 @@ npm run dev:backend   # Start only backend
 npm run dev:frontend  # Start only frontend
 ```
 
-### Production Build
+## Visualizing the repo
 
-```bash
-npm run build
-npm run start
-```
+1. Add the absolute path of the folder containing the ```.git``` folder and voila! 
+
+### 
+Additionaly you can also input the github/gitlab url in the input bar on index page. or simple add ```http://localhost:<port>/github.com/<user>/<repo>```
 
 ## Configuration
 
