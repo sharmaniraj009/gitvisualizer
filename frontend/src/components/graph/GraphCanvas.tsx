@@ -7,6 +7,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useViewport,
   BackgroundVariant,
   type Node,
   type Edge,
@@ -112,11 +113,38 @@ export function GraphCanvas() {
     navigateToSubmodule,
   ]);
 
-  // Apply selection and highlighting WITHOUT re-running layout
+  const { x, y, zoom } = useViewport();
+
+  // Virtualization: Filter nodes based on current viewport
   useEffect(() => {
     if (layoutedNodes.length > 0 || submoduleNodes.length > 0) {
-      // Update commit nodes with selection and highlighting (O(n) but no layout recalc)
-      const commitNodesWithState = layoutedNodes.map((node) => ({
+      // Calculate viewport bounds in graph coordinates
+      // Viewport transform: [x, y, zoom]
+      // Graph coordinate = (Screen coordinate - x) / zoom
+
+      // Get container dimensions (fallback to window if not available)
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      // Add a generous buffer (e.g., 1 viewport size in all directions) to prevent popping during scroll
+      const bufferX = width / zoom;
+      const bufferY = height / zoom;
+
+      const minX = -x / zoom - bufferX;
+      const maxX = (-x + width) / zoom + bufferX;
+      const minY = -y / zoom - bufferY;
+      const maxY = (-y + height) / zoom + bufferY;
+
+      // Filter nodes that are roughly within visible area
+      const visibleNodes = layoutedNodes.filter((node) => {
+        const nodeX = node.position.x;
+        const nodeY = node.position.y;
+        // Simple bounding box check (assuming max node size ~300x100)
+        return nodeX >= minX && nodeX <= maxX && nodeY >= minY && nodeY <= maxY;
+      });
+
+      // Update visible commit nodes with selection and highlighting
+      const visibleCommitNodesWithState = visibleNodes.map((node) => ({
         ...node,
         selected: selectedCommit?.hash === node.id,
         data: {
@@ -125,17 +153,33 @@ export function GraphCanvas() {
         },
       }));
 
-      // Combine commit nodes with submodule nodes
-      const allNodes = [...commitNodesWithState, ...submoduleNodes];
+      // Combine visible commit nodes with submodule nodes (always show submodules for now as they are few)
+      const allVisibleNodes = [
+        ...visibleCommitNodesWithState,
+        ...submoduleNodes,
+      ];
 
-      setNodes(allNodes as Node[]);
-      setEdges(layoutedEdges as Edge[]);
+      // Filter edges: keep edges where BOTH source and target are visible
+      // Optimization: For large graphs, we might also want to show edges connected to visible nodes
+      // even if one end is off-screen, but for pure performance, strict visibility is faster.
+      const visibleNodeIds = new Set(allVisibleNodes.map((n) => n.id));
+      const visibleEdges = layoutedEdges.filter(
+        (edge) =>
+          visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target),
+      );
 
-      // Fit view only when commits change, not on selection
+      setNodes(allVisibleNodes as Node[]);
+      setEdges(visibleEdges as Edge[]);
+
+      // Fit view only when commits change, not on selection or pan/zoom
       const commitsChanged = prevFilteredCommitsRef.current !== filteredCommits;
       if (commitsChanged) {
         prevFilteredCommitsRef.current = filteredCommits;
-        setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 100);
+        // Don't fit view constantly during virtualization updates
+        // Only on initial load of new data
+        if (visibleNodes.length === 0 && layoutedNodes.length > 0) {
+          setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 100);
+        }
       }
     } else {
       setNodes([]);
@@ -151,6 +195,9 @@ export function GraphCanvas() {
     setNodes,
     setEdges,
     fitView,
+    x,
+    y,
+    zoom, // Re-run when viewport changes
   ]);
 
   // Zoom to selected commit when it changes

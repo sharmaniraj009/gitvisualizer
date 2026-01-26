@@ -451,6 +451,10 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
         const allCommits: Commit[] = [];
         const firstParent = mode === "simplified";
 
+        // Variables for throttled updates
+        let lastUpdateTime = 0;
+        let lastCommitCount = 0;
+
         const abort = streamRepository(
           path,
           {
@@ -472,18 +476,38 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
             },
             onCommits: (commits: Commit[], progress: number, total: number) => {
               allCommits.push(...commits);
-              set((state) => ({
-                repository: state.repository
-                  ? {
-                      ...state.repository,
-                      commits: [...allCommits],
-                      loadedCommitCount: allCommits.length,
-                      totalCommitCount: total,
-                    }
-                  : null,
-                loadingProgress: progress,
-                loadingMessage: `Loaded ${allCommits.length.toLocaleString()} of ${total.toLocaleString()} commits...`,
-              }));
+
+              // Helper to update state
+              const updateState = () => {
+                set((state) => ({
+                  repository: state.repository
+                    ? {
+                        ...state.repository,
+                        commits: [...allCommits],
+                        loadedCommitCount: allCommits.length,
+                        totalCommitCount: total,
+                      }
+                    : null,
+                  loadingProgress: progress,
+                  loadingMessage: `Loaded ${allCommits.length.toLocaleString()} of ${total.toLocaleString()} commits...`,
+                }));
+              };
+
+              // Throttled updates: only update if enough time passed or enough commits loaded
+              const now = Date.now();
+              const timeSinceLastUpdate = now - (lastUpdateTime || 0);
+              const commitsSinceLastUpdate =
+                allCommits.length - (lastCommitCount || 0);
+
+              if (
+                !lastUpdateTime ||
+                timeSinceLastUpdate > 1000 ||
+                commitsSinceLastUpdate > 2000
+              ) {
+                lastUpdateTime = now;
+                lastCommitCount = allCommits.length;
+                updateState();
+              }
             },
             onComplete: () => {
               // Build adjacency map after streaming completes for fast highlighting
