@@ -43,13 +43,13 @@ import {
   getBusFactor,
   getCommitPatterns,
   getBranchLifespans,
+  cleanupRepository,
 } from "../api/gitApi";
 import {
   setGitHubToken as setGitHubTokenApi,
   getGitHubRepoInfo,
   getCommitGitHubInfo,
 } from "../api/githubApi";
-import { cleanupRepository } from "../api/gitApi";
 
 export type LoadMode = "full" | "paginated" | "simplified";
 export type DetailTab = "details" | "changes" | "files" | "github";
@@ -631,6 +631,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
           pendingPath: repository.path,
           loadingProgress: -1,
           loadingMessage: "",
+          isTemporaryRepo: true, // Mark as temporary so it gets cleaned up if user cancels or later resets
         });
         return;
       }
@@ -806,12 +807,23 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
 
   setSearchQuery: (query) => set({ searchQuery: query }),
 
-  dismissLargeRepoWarning: () =>
+  dismissLargeRepoWarning: () => {
+    const { pendingPath, isTemporaryRepo } = get();
+
+    // Cleanup temporary repository files if user cancels loading a large cloned repo
+    if (pendingPath && isTemporaryRepo) {
+      cleanupRepository(pendingPath).catch(() => {
+        // Silently fail
+      });
+    }
+
     set({
       showLargeRepoWarning: false,
       pendingPath: null,
       isLoading: false,
-    }),
+      isTemporaryRepo: false,
+    });
+  },
 
   confirmLoadLargeRepo: (mode: LoadMode) => {
     const { pendingPath } = get();
