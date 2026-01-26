@@ -218,12 +218,10 @@ repositoryRoutes.post(
       const filePath = req.query.filePath as string;
 
       if (!filePath) {
-        res
-          .status(400)
-          .json({
-            success: false,
-            error: "filePath query parameter is required",
-          });
+        res.status(400).json({
+          success: false,
+          error: "filePath query parameter is required",
+        });
         return;
       }
 
@@ -264,12 +262,10 @@ repositoryRoutes.post(
       const filePath = req.query.filePath as string;
 
       if (!filePath) {
-        res
-          .status(400)
-          .json({
-            success: false,
-            error: "filePath query parameter is required",
-          });
+        res.status(400).json({
+          success: false,
+          error: "filePath query parameter is required",
+        });
         return;
       }
 
@@ -501,12 +497,10 @@ repositoryRoutes.post(
       const { baseBranch, compareBranch } = req.body;
 
       if (!baseBranch || !compareBranch) {
-        res
-          .status(400)
-          .json({
-            success: false,
-            error: "baseBranch and compareBranch are required",
-          });
+        res.status(400).json({
+          success: false,
+          error: "baseBranch and compareBranch are required",
+        });
         return;
       }
 
@@ -542,12 +536,10 @@ repositoryRoutes.post(
       }
 
       if (!gitService.validateGitUrl(url)) {
-        res
-          .status(400)
-          .json({
-            error:
-              "Invalid git repository URL. Supported: GitHub, GitLab, Bitbucket, or any public .git URL",
-          });
+        res.status(400).json({
+          error:
+            "Invalid git repository URL. Supported: GitHub, GitLab, Bitbucket, or any public .git URL",
+        });
         return;
       }
 
