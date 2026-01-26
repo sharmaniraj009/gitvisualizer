@@ -37,6 +37,7 @@ function App() {
     leftPanelOpen,
     rightPanelOpen,
     closeAllPanels,
+    reset,
   } = useRepositoryStore();
 
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -89,7 +90,7 @@ function App() {
   }, [rightPanelWidth]);
 
   // Enable URL-based repository loading (e.g., /github.com/user/repo)
-  useRepoUrl();
+  const { clearUrl } = useRepoUrl();
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-950">
@@ -112,8 +113,15 @@ function App() {
           )}
 
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-4">
-            {/* Logo and Title - Left */}
-            <div className="flex items-center gap-2">
+            {/* Logo and Title - Left - Clickable to go Home */}
+            <button
+              onClick={() => {
+                reset();
+                clearUrl();
+              }}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              title="Go to home"
+            >
               <svg
                 className="w-6 h-6 lg:w-8 lg:h-8 text-blue-600"
                 fill="currentColor"
@@ -124,7 +132,7 @@ function App() {
               <h1 className="text-lg lg:text-xl font-bold text-gray-900 dark:text-gray-100">
                 Git Visualizer
               </h1>
-            </div>
+            </button>
 
             {/* Searchbar - Center */}
             <div className="flex-1 flex justify-center">

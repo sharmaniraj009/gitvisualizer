@@ -49,6 +49,7 @@ import {
   getGitHubRepoInfo,
   getCommitGitHubInfo,
 } from "../api/githubApi";
+import { cleanupRepository } from "../api/gitApi";
 
 export type LoadMode = "full" | "paginated" | "simplified";
 export type DetailTab = "details" | "changes" | "files" | "github";
@@ -93,6 +94,7 @@ interface RepositoryState {
   pendingPath: string | null;
   loadMode: LoadMode;
   abortStream: (() => void) | null;
+  isTemporaryRepo: boolean; // Track if repo is cloned/uploaded (needs cleanup)
 
   // Diff viewer state
   activeTab: DetailTab;
@@ -277,6 +279,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   pendingPath: null,
   loadMode: "full",
   abortStream: null,
+  isTemporaryRepo: false,
 
   // Diff viewer state
   activeTab: "details",
@@ -616,6 +619,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
           totalCommitCount: repository.commits.length,
         },
         adjacencyMap: buildAdjacencyMap(repository.commits),
+        isTemporaryRepo: true, // Cloned repos are temporary and should be cleaned up
         isLoading: false,
         loadingProgress: 100,
         loadingMessage: "",
@@ -793,7 +797,15 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   },
 
   reset: () => {
-    const { abortStream } = get();
+    const { abortStream, repository, isTemporaryRepo } = get();
+
+    // Cleanup temporary repository files (cloned/uploaded repos)
+    if (repository && isTemporaryRepo) {
+      cleanupRepository(repository.path).catch(() => {
+        // Silently fail - cleanup is best effort
+      });
+    }
+
     if (abortStream) {
       abortStream();
     }
@@ -807,6 +819,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       showLargeRepoWarning: false,
       pendingPath: null,
       abortStream: null,
+      isTemporaryRepo: false,
       // Reset diff and file tree state
       activeTab: "details",
       diffStats: null,
