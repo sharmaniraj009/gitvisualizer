@@ -103,7 +103,9 @@ export function GraphToolbar() {
           }
         `}
         title={
-          graphSettings.colorByAuthor ? "Color by branch" : "Color by author"
+          graphSettings.colorByAuthor
+            ? "Switch to branch colors"
+            : "Switch to author colors"
         }
       >
         <svg
@@ -117,18 +119,20 @@ export function GraphToolbar() {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+              d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
             />
           ) : (
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
             />
           )}
         </svg>
-        <span>{graphSettings.colorByAuthor ? "By Author" : "By Branch"}</span>
+        <span>
+          {graphSettings.colorByAuthor ? "Show Branches" : "Show Authors"}
+        </span>
       </button>
     </div>
   );

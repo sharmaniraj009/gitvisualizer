@@ -6,6 +6,7 @@ import { assignBranchColors, assignAuthorColors } from "./branchColors";
 export interface CommitNodeData extends Record<string, unknown> {
   commit: Commit;
   color: string;
+  gradient?: string;
   isCompact: boolean;
   isHighlighted: boolean;
 }
@@ -44,31 +45,58 @@ export interface GraphSettings {
 function createSimpleLayout(
   commits: Commit[],
   graphSettings: GraphSettings,
-): { nodes: CommitNode[]; edges: CommitEdge[] } {
+): {
+  nodes: CommitNode[];
+  edges: CommitEdge[];
+  branchColorMap: Map<string, string>;
+} {
   const { compactMode, colorByAuthor, highlightedCommits } = graphSettings;
   const nodeHeight = compactMode ? NODE_HEIGHT_COMPACT : NODE_HEIGHT_NORMAL;
   const spacing = compactMode ? 20 : 40;
 
+  const colorAssignment = assignBranchColors(commits);
+
   const colorMap = colorByAuthor
     ? assignAuthorColors(commits)
-    : assignBranchColors(commits);
+    : colorAssignment.commitColors;
+
+  // If coloring by author, we don't have a branch color map for the legend (or we could generate one for authors)
+  // For now, only providing branch legend when coloring by branch
+  const branchColorMap = colorByAuthor
+    ? new Map<string, string>()
+    : colorAssignment.branchColors;
 
   const commitSet = new Set(commits.map((c) => c.hash));
 
-  const nodes: CommitNode[] = commits.map((commit, index) => ({
-    id: commit.hash,
-    type: "commit",
-    position: {
-      x: 50,
-      y: index * (nodeHeight + spacing),
-    },
-    data: {
-      commit,
-      color: colorMap.get(commit.hash) || "#888",
-      isCompact: compactMode,
-      isHighlighted: highlightedCommits.has(commit.hash),
-    },
-  }));
+  const nodes: CommitNode[] = commits.map((commit, index) => {
+    // Calculate gradient for merge commits
+    let gradient: string | undefined;
+    if (commit.parents.length > 1 && !graphSettings.compactMode) {
+      const primaryColor = colorMap.get(commit.hash) || "#888";
+      const secondParentHash = commit.parents[1];
+      const secondaryColor = colorMap.get(secondParentHash);
+
+      if (secondaryColor && secondaryColor !== primaryColor) {
+        gradient = `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`;
+      }
+    }
+
+    return {
+      id: commit.hash,
+      type: "commit",
+      position: {
+        x: 50,
+        y: index * (nodeHeight + spacing),
+      },
+      data: {
+        commit,
+        color: colorMap.get(commit.hash) || "#888",
+        gradient,
+        isCompact: compactMode,
+        isHighlighted: highlightedCommits.has(commit.hash),
+      },
+    };
+  });
 
   const edges: CommitEdge[] = [];
   const addedEdges = new Set<string>();
@@ -99,7 +127,7 @@ function createSimpleLayout(
     }
   }
 
-  return { nodes, edges };
+  return { nodes, edges, branchColorMap };
 }
 
 // Detect cycles in commit graph using iterative DFS (avoids stack overflow)
@@ -184,9 +212,13 @@ export function layoutCommitGraph(
     colorByAuthor: false,
     highlightedCommits: new Set(),
   },
-): { nodes: CommitNode[]; edges: CommitEdge[] } {
+): {
+  nodes: CommitNode[];
+  edges: CommitEdge[];
+  branchColorMap: Map<string, string>;
+} {
   if (commits.length === 0) {
-    return { nodes: [], edges: [] };
+    return { nodes: [], edges: [], branchColorMap: new Map() };
   }
 
   // For large repos, skip dagre entirely to avoid stack overflow in its recursive DFS
@@ -232,9 +264,15 @@ export function layoutCommitGraph(
   g.setDefaultEdgeLabel(() => ({}));
 
   // Choose color assignment based on setting
+  const colorAssignment = assignBranchColors(commits);
+
   const colorMap = colorByAuthor
     ? assignAuthorColors(commits)
-    : assignBranchColors(commits);
+    : colorAssignment.commitColors;
+
+  const branchColorMap = colorByAuthor
+    ? new Map<string, string>()
+    : colorAssignment.branchColors;
 
   const commitSet = new Set(commits.map((c) => c.hash));
 
@@ -290,8 +328,22 @@ export function layoutCommitGraph(
   dagre.layout(g);
 
   // Extract positioned nodes
+  // Extract positioned nodes
   const nodes: CommitNode[] = commits.map((commit) => {
     const nodeWithPosition = g.node(commit.hash);
+
+    // Calculate gradient for merge commits
+    let gradient: string | undefined;
+    if (commit.parents.length > 1 && !compactMode) {
+      const primaryColor = colorMap.get(commit.hash) || "#888";
+      const secondParentHash = commit.parents[1];
+      const secondaryColor = colorMap.get(secondParentHash);
+
+      if (secondaryColor && secondaryColor !== primaryColor) {
+        gradient = `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`;
+      }
+    }
+
     return {
       id: commit.hash,
       type: "commit",
@@ -302,13 +354,14 @@ export function layoutCommitGraph(
       data: {
         commit,
         color: colorMap.get(commit.hash) || "#888",
+        gradient,
         isCompact: compactMode,
         isHighlighted: highlightedCommits.has(commit.hash),
       },
     };
   });
 
-  return { nodes, edges };
+  return { nodes, edges, branchColorMap };
 }
 
 // Submodule node dimensions

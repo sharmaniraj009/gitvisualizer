@@ -22,6 +22,7 @@ interface CommitNodeProps {
 }
 
 // Custom comparison to prevent unnecessary re-renders
+// Custom comparison to prevent unnecessary re-renders
 function arePropsEqual(prev: CommitNodeProps, next: CommitNodeProps): boolean {
   // Only re-render if these specific properties change
   return (
@@ -29,12 +30,23 @@ function arePropsEqual(prev: CommitNodeProps, next: CommitNodeProps): boolean {
     prev.data.isCompact === next.data.isCompact &&
     prev.data.isHighlighted === next.data.isHighlighted &&
     prev.data.color === next.data.color &&
+    prev.data.gradient === next.data.gradient &&
     prev.selected === next.selected
   );
 }
 
 export const CommitNode = memo(({ data, selected }: CommitNodeProps) => {
-  const { commit, color, isCompact, isHighlighted } = data;
+  const { commit, color, gradient, isCompact, isHighlighted } = data;
+
+  // Style for gradient border
+  const nodeStyle = gradient
+    ? {
+        border: "2px solid transparent",
+        backgroundImage: `linear-gradient(var(--bg-card), var(--bg-card)), ${gradient}`,
+        backgroundOrigin: "border-box",
+        backgroundClip: "padding-box, border-box",
+      }
+    : { borderColor: color };
 
   // Compact mode rendering
   if (isCompact) {
@@ -47,7 +59,7 @@ export const CommitNode = memo(({ data, selected }: CommitNodeProps) => {
           ${selected ? "ring-2 ring-blue-500 ring-offset-1 dark:ring-offset-gray-900" : ""}
           ${isHighlighted && !selected ? "ring-2 ring-amber-400 ring-offset-1 dark:ring-offset-gray-900 bg-amber-50 dark:bg-amber-900/30" : ""}
         `}
-        style={{ borderColor: color }}
+        style={nodeStyle}
       >
         <Handle
           type="target"
@@ -106,7 +118,7 @@ export const CommitNode = memo(({ data, selected }: CommitNodeProps) => {
         ${selected ? "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-gray-900" : ""}
         ${isHighlighted && !selected ? "ring-2 ring-amber-400 ring-offset-2 dark:ring-offset-gray-900 bg-amber-50 dark:bg-amber-900/30" : ""}
       `}
-      style={{ borderColor: color }}
+      style={nodeStyle}
     >
       <Handle
         type="target"

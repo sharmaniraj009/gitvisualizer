@@ -13,34 +13,78 @@ const BRANCH_COLORS = [
   "#6366F1", // indigo
 ];
 
-export function assignBranchColors(commits: Commit[]): Map<string, string> {
-  const colorMap = new Map<string, string>();
-  const branchColorIndex = new Map<string, number>();
+export interface ColorMaps {
+  commitColors: Map<string, string>;
+  branchColors: Map<string, string>;
+}
+
+export function assignBranchColors(commits: Commit[]): ColorMaps {
+  const commitColors = new Map<string, string>();
+  const branchColors = new Map<string, string>();
   let colorIndex = 0;
 
+  // Helper to get next color
+  const getNextColor = () => {
+    const color = BRANCH_COLORS[colorIndex % BRANCH_COLORS.length];
+    colorIndex++;
+    return color;
+  };
+
+  // Traverse commits (newest to oldest) to assign/propagate colors
   for (const commit of commits) {
-    const primaryBranch =
-      commit.refs.find((r) => r.type === "branch")?.name || "default";
+    const inheritedColor = commitColors.get(commit.hash);
 
-    if (!branchColorIndex.has(primaryBranch)) {
-      branchColorIndex.set(primaryBranch, colorIndex % BRANCH_COLORS.length);
-      colorIndex++;
-    }
-
-    colorMap.set(
-      commit.hash,
-      BRANCH_COLORS[branchColorIndex.get(primaryBranch)!],
+    // Explicit Branch/Remote tips on this commit
+    const refs = commit.refs.filter(
+      (r) => r.type === "branch" || r.type === "remote",
     );
-  }
 
-  // Assign default color for commits without a branch ref
-  for (const commit of commits) {
-    if (!colorMap.has(commit.hash)) {
-      colorMap.set(commit.hash, "#6B7280"); // gray
+    let myColor: string;
+
+    if (inheritedColor) {
+      // Case A: Inherited Color (assigned by a child)
+      // Any branches pointing here should adopt this color (e.g. origin/main adopts main's color)
+      myColor = inheritedColor;
+      for (const r of refs) {
+        if (!branchColors.has(r.name)) {
+          branchColors.set(r.name, myColor);
+        }
+      }
+    } else {
+      // Case B: No Inherited Color
+      // This is a start of a branch (tip) or an informative commit
+      myColor = getNextColor();
+
+      // Assign to all refs found here
+      for (const r of refs) {
+        if (!branchColors.has(r.name)) {
+          branchColors.set(r.name, myColor);
+        }
+      }
+    }
+
+    // Ensure commit has color set
+    commitColors.set(commit.hash, myColor);
+
+    // Propagate to First Parent
+    // (Standard git flow: first parent continues the branch)
+    if (commit.parents.length > 0) {
+      const firstParentHash = commit.parents[0];
+
+      // We only assign if not already assigned.
+      // The first child (Newest) wins the color rights for the parent (Main line).
+      if (!commitColors.has(firstParentHash)) {
+        commitColors.set(firstParentHash, myColor);
+      }
     }
   }
 
-  return colorMap;
+  // Ensure "default" branch has a color if it ends up being used somewhere fallback
+  if (!branchColors.has("default")) {
+    branchColors.set("default", "#6B7280");
+  }
+
+  return { commitColors, branchColors };
 }
 
 export function getBranchColor(index: number): string {

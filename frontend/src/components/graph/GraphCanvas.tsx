@@ -23,6 +23,7 @@ import {
   layoutCommitGraph,
   layoutSubmoduleNodes,
 } from "../../utils/layoutEngine";
+import { Legend } from "./Legend";
 
 const nodeTypes = {
   commit: CommitNode,
@@ -78,40 +79,50 @@ export function GraphCanvas() {
 
   // Memoize layout calculation - only recalculate when commits or layout-affecting settings change
   // CRITICAL: Do NOT include selectedCommit or highlightedCommits here to avoid expensive re-layouts
-  const { layoutedNodes, layoutedEdges, submoduleNodes } = useMemo(() => {
-    if (filteredCommits.length === 0) {
-      return { layoutedNodes: [], layoutedEdges: [], submoduleNodes: [] };
-    }
+  const { layoutedNodes, layoutedEdges, submoduleNodes, branchColorMap } =
+    useMemo(() => {
+      if (filteredCommits.length === 0) {
+        return {
+          layoutedNodes: [],
+          layoutedEdges: [],
+          submoduleNodes: [],
+          branchColorMap: new Map<string, string>(),
+        };
+      }
 
-    const { nodes: layoutedNodes, edges: layoutedEdges } = layoutCommitGraph(
+      const {
+        nodes: layoutedNodes,
+        edges: layoutedEdges,
+        branchColorMap,
+      } = layoutCommitGraph(
+        filteredCommits,
+        { direction: "TB", nodeSpacing: 40, rankSpacing: 80 },
+        {
+          compactMode: graphSettings.compactMode,
+          colorByAuthor: graphSettings.colorByAuthor,
+          highlightedCommits: new Set<string>(), // Empty set - highlighting applied separately
+        },
+      );
+
+      // Layout submodule nodes below the commit graph
+      const submoduleNodes =
+        submodules && submodules.length > 0
+          ? layoutSubmoduleNodes(submodules, layoutedNodes, {
+              isCompact: graphSettings.compactMode,
+              selectedSubmodulePath: selectedSubmodule?.path,
+              onNavigate: navigateToSubmodule,
+            })
+          : [];
+
+      return { layoutedNodes, layoutedEdges, submoduleNodes, branchColorMap };
+    }, [
       filteredCommits,
-      { direction: "TB", nodeSpacing: 40, rankSpacing: 80 },
-      {
-        compactMode: graphSettings.compactMode,
-        colorByAuthor: graphSettings.colorByAuthor,
-        highlightedCommits: new Set<string>(), // Empty set - highlighting applied separately
-      },
-    );
-
-    // Layout submodule nodes below the commit graph
-    const submoduleNodes =
-      submodules && submodules.length > 0
-        ? layoutSubmoduleNodes(submodules, layoutedNodes, {
-            isCompact: graphSettings.compactMode,
-            selectedSubmodulePath: selectedSubmodule?.path,
-            onNavigate: navigateToSubmodule,
-          })
-        : [];
-
-    return { layoutedNodes, layoutedEdges, submoduleNodes };
-  }, [
-    filteredCommits,
-    graphSettings.compactMode,
-    graphSettings.colorByAuthor,
-    submodules,
-    selectedSubmodule?.path,
-    navigateToSubmodule,
-  ]);
+      graphSettings.compactMode,
+      graphSettings.colorByAuthor,
+      submodules,
+      selectedSubmodule?.path,
+      navigateToSubmodule,
+    ]);
 
   const { x, y, zoom } = useViewport();
 
@@ -265,6 +276,34 @@ export function GraphCanvas() {
     ],
   );
 
+  const handleNavigateToBranch = useCallback(
+    (branchName: string) => {
+      if (!repository) return;
+
+      // Find the branch in repository.branches
+      const branch = repository.branches.find((b) => b.name === branchName);
+      let commitHash = branch?.commit;
+
+      // If not found in branches list (e.g. detached ref or tag treated as branch in colors), search commits
+      if (!commitHash) {
+        const commit = repository.commits.find((c) =>
+          c.refs.some((r) => r.name === branchName),
+        );
+        if (commit) {
+          commitHash = commit.hash;
+        }
+      }
+
+      if (commitHash) {
+        const commit = repository.commits.find((c) => c.hash === commitHash);
+        if (commit) {
+          setSelectedCommit(commit);
+        }
+      }
+    },
+    [repository, setSelectedCommit],
+  );
+
   if (!repository) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -348,6 +387,16 @@ export function GraphCanvas() {
           color={darkMode ? "#374151" : "#e5e7eb"}
         />
       </ReactFlow>
+
+      {/* Legend - Only show if not coloring by author (where map is empty) */}
+      {!graphSettings.colorByAuthor &&
+        branchColorMap &&
+        branchColorMap.size > 0 && (
+          <Legend
+            branchColors={branchColorMap}
+            onBranchClick={handleNavigateToBranch}
+          />
+        )}
     </div>
   );
 }
