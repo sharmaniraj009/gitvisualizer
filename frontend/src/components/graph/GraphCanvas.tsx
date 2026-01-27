@@ -340,6 +340,13 @@ export function GraphCanvas() {
     );
   }
 
+  // Handle pane click (clicking on blank canvas)
+  const onPaneClick = useCallback(() => {
+    setSelectedCommit(null);
+    // Optionally fit view to show entire graph
+    setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
+  }, [setSelectedCommit, fitView]);
+
   return (
     <div className="w-full h-full relative">
       <GraphToolbar />
@@ -349,6 +356,7 @@ export function GraphCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
         minZoom={0.1}
