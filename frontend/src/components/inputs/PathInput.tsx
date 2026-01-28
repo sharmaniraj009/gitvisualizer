@@ -6,7 +6,6 @@ import { repoUrlToPath } from "../../hooks/useRepoUrl";
 
 export function PathInput() {
   const [input, setInput] = useState("");
-  const [fullClone, setFullClone] = useState(false);
   const { loadRepo, cloneRepo, isLoading, error, repository } =
     useRepositoryStore();
   const navigate = useNavigate();
@@ -34,7 +33,7 @@ export function PathInput() {
       const urlPath = repoUrlToPath(trimmed);
       navigate(urlPath, { replace: true });
 
-      await cloneRepo(trimmed, { shallow: !fullClone });
+      await cloneRepo(trimmed);
     } else {
       await loadRepo(trimmed);
     }
@@ -129,27 +128,6 @@ export function PathInput() {
           )}
         </button>
       </form>
-
-      {/* Clone options - only show when URL is detected */}
-      {inputType === "url" && !repository && (
-        <div className="flex items-center gap-4 pl-1">
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={fullClone}
-              onChange={(e) => setFullClone(e.target.checked)}
-              disabled={isLoading}
-              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500 dark:bg-gray-700"
-            />
-            <span>Clone full history</span>
-          </label>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {fullClone
-              ? "(Downloads complete history - slower but shows all commits)"
-              : "(Downloads recent 500 commits - faster)"}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

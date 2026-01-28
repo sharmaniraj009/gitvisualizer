@@ -324,10 +324,18 @@ export function layoutCommitGraph(
     }
   }
 
-  // Run layout
-  dagre.layout(g);
+  // Run layout - wrapped in try-catch to handle stack overflow from cycles
+  try {
+    dagre.layout(g);
+  } catch (error) {
+    console.error(
+      "Dagre layout failed (likely due to graph complexity or cycles):",
+      error,
+    );
+    console.warn("Falling back to simple vertical layout");
+    return createSimpleLayout(commits, graphSettings);
+  }
 
-  // Extract positioned nodes
   // Extract positioned nodes
   const nodes: CommitNode[] = commits.map((commit) => {
     const nodeWithPosition = g.node(commit.hash);

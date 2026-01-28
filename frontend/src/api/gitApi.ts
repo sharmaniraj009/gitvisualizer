@@ -287,16 +287,16 @@ export class AuthRequiredError extends Error {
 
 export async function cloneRepository(
   url: string,
-  options: { shallow?: boolean; token?: string } = {},
+  options: { token?: string } = {},
 ): Promise<Repository> {
-  const { shallow = true, token } = options;
+  const { token } = options;
 
   const response = await fetch(`${API_BASE}/repository/clone`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ url, shallow, token }),
+    body: JSON.stringify({ url, token }),
   });
 
   const data = await response.json();

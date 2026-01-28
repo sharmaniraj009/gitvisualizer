@@ -99,8 +99,8 @@ export function useRepoUrl() {
     if (repoUrl && !isLoading && !repository) {
       hasInitialized.current = true;
       lastRepoUrl.current = repoUrl;
-      // Clone the repository (shallow by default for faster loading)
-      cloneRepo(repoUrl, { shallow: true });
+      // Clone the repository (using bare clone to get only .git folder)
+      cloneRepo(repoUrl);
     } else {
       hasInitialized.current = true;
     }

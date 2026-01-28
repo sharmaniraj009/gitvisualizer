@@ -179,17 +179,13 @@ interface RepositoryState {
   // Auth modal state (for private repos)
   showAuthModal: boolean;
   pendingCloneUrl: string | null;
-  pendingCloneShallow: boolean;
   cloneToken: string | null; // Stored token for reuse
 
   // Actions
   loadRepo: (path: string) => Promise<void>;
   loadRepoWithMode: (path: string, mode: LoadMode) => Promise<void>;
   loadMoreCommits: () => Promise<void>;
-  cloneRepo: (
-    url: string,
-    options?: { shallow?: boolean; token?: string },
-  ) => Promise<void>;
+  cloneRepo: (url: string, options?: { token?: string }) => Promise<void>;
   dismissAuthModal: () => void;
   retryCloneWithToken: (token: string, saveToken?: boolean) => Promise<void>;
   uploadRepo: (file: File) => Promise<void>;
@@ -367,7 +363,6 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   // Auth modal state (for private repos)
   showAuthModal: false,
   pendingCloneUrl: null,
-  pendingCloneShallow: true,
   cloneToken: localStorage.getItem("clone_token"),
 
   loadRepo: async (path: string) => {
@@ -594,11 +589,8 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     }
   },
 
-  cloneRepo: async (
-    url: string,
-    options: { shallow?: boolean; token?: string } = {},
-  ) => {
-    const { shallow = true, token } = options;
+  cloneRepo: async (url: string, options: { token?: string } = {}) => {
+    const { token } = options;
     const { cloneToken } = get();
 
     // Use provided token, or fall back to stored token
@@ -612,20 +604,15 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       currentRequestId: requestId,
       error: null,
       selectedCommit: null,
-      loadingMessage: shallow
-        ? "Cloning repository (shallow)..."
-        : "Cloning full repository...",
+      loadingMessage: "Cloning repository (bare)...",
       loadingProgress: -1,
     });
     try {
       set({
-        loadingMessage: shallow
-          ? "Downloading recent history..."
-          : "Downloading full history (this may take a while)...",
+        loadingMessage: "Downloading repository data...",
         loadingProgress: 30,
       });
       const repository = await cloneRepository(url, {
-        shallow,
         token: authToken,
       });
 
@@ -675,7 +662,6 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
           loadingMessage: "",
           showAuthModal: true,
           pendingCloneUrl: url,
-          pendingCloneShallow: shallow,
           error: null,
         });
         return;
@@ -694,12 +680,11 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     set({
       showAuthModal: false,
       pendingCloneUrl: null,
-      pendingCloneShallow: true,
     });
   },
 
   retryCloneWithToken: async (token: string, saveToken: boolean = true) => {
-    const { pendingCloneUrl, pendingCloneShallow } = get();
+    const { pendingCloneUrl } = get();
 
     if (!pendingCloneUrl) return;
 
@@ -717,7 +702,6 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
 
     // Retry clone with token
     await get().cloneRepo(pendingCloneUrl, {
-      shallow: pendingCloneShallow,
       token,
     });
   },

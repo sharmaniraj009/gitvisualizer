@@ -441,8 +441,7 @@ export function GitHubInfo() {
               <p className="text-xs mt-1">{error}</p>
               {error.includes("Commit not found") && (
                 <p className="text-xs mt-2 text-red-600">
-                  This may be because the repository was cloned with shallow
-                  history. Try cloning with "full history" option.
+                  This commit might not be available in the remote repository.
                 </p>
               )}
               {!githubToken && (

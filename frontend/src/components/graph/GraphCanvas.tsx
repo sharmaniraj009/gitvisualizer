@@ -43,6 +43,8 @@ export function GraphCanvas() {
     setSelectedSubmodule,
     navigateToSubmodule,
     darkMode,
+    isLoading,
+    loadingMessage,
   } = useRepositoryStore();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -312,6 +314,23 @@ export function GraphCanvas() {
     setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
   }, [setSelectedCommit, fitView]);
 
+  // Show loading state when repository is being loaded
+  // OR when streaming has started but no commits loaded yet
+  if (isLoading && (!repository || repository.commits.length === 0)) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          {loadingMessage && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {loadingMessage}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!repository) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -343,6 +362,52 @@ export function GraphCanvas() {
           <div className="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
             <p>The app will automatically detect the .git folder</p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Debug logging
+  console.log("[GraphCanvas] Repository:", {
+    name: repository.name,
+    commitsCount: repository.commits.length,
+    filteredCommitsCount: filteredCommits.length,
+    layoutedNodesCount: layoutedNodes.length,
+    isLoading,
+  });
+
+  // Check if repository has commits but can't render
+  if (
+    !isLoading &&
+    repository.commits.length > 0 &&
+    layoutedNodes.length === 0
+  ) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="max-w-md text-center px-6">
+          <svg
+            className="w-16 h-16 mx-auto mb-4 text-red-300"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Unable to Render Graph
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Repository loaded with {repository.commits.length} commits but graph
+            layout failed.
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+            Check the browser console (F12) for more details.
+          </p>
         </div>
       </div>
     );

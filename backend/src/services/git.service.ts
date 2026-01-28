@@ -259,7 +259,19 @@ class GitService {
   async validateRepository(repoPath: string): Promise<boolean> {
     try {
       const git = this.getGit(repoPath);
-      return await git.checkIsRepo();
+      // Check if it's a regular repo
+      const isRepo = await git.checkIsRepo();
+      if (isRepo) return true;
+
+      // Check if it's a bare repository by looking for HEAD file and refs directory
+      // Bare repos have these files directly in the root, not in a .git subdirectory
+      try {
+        await fs.access(path.join(repoPath, "HEAD"));
+        await fs.access(path.join(repoPath, "refs"));
+        return true;
+      } catch {
+        return false;
+      }
     } catch {
       return false;
     }
@@ -313,16 +325,19 @@ class GitService {
 
   async cloneRepository(
     url: string,
-    options: { shallow?: boolean; depth?: number; token?: string } = {},
+    options: { token?: string } = {},
   ): Promise<string> {
     if (!this.validateGitUrl(url)) {
       throw new Error("Invalid git repository URL");
     }
 
-    const { shallow = true, depth = 500, token } = options;
+    const { token } = options;
 
     const repoName = this.extractRepoName(url);
-    const tempDir = path.join(os.tmpdir(), `gitvis-${repoName}-${Date.now()}`);
+    const tempDir = path.join(
+      os.tmpdir(),
+      `gitvis-${repoName}-${Date.now()}.git`,
+    );
 
     // Create temp directory
     await fs.mkdir(tempDir, { recursive: true });
@@ -330,11 +345,8 @@ class GitService {
     const git = simpleGit();
 
     try {
-      const cloneArgs: string[] = ["--no-single-branch"]; // Fetch all branches, not just default
-
-      if (shallow) {
-        cloneArgs.push("--depth", depth.toString());
-      }
+      // Use --bare to clone only the .git folder (repository data without working tree)
+      const cloneArgs: string[] = ["--bare"];
 
       // Use authenticated URL if token provided
       const cloneUrl = token ? this.injectTokenIntoUrl(url, token) : url;
@@ -400,9 +412,13 @@ class GitService {
 
     const LARGE_REPO_THRESHOLD = 10000;
     const HUGE_REPO_THRESHOLD = 100000;
+    const EXTREME_REPO_THRESHOLD = 500000; // Linux kernel level
 
     let recommendedMode: "full" | "paginated" | "simplified" = "full";
-    if (totalCommits > HUGE_REPO_THRESHOLD) {
+    if (totalCommits > EXTREME_REPO_THRESHOLD) {
+      // Extremely large repos (e.g., Linux kernel) - force simplified mode
+      recommendedMode = "simplified";
+    } else if (totalCommits > HUGE_REPO_THRESHOLD) {
       recommendedMode = "simplified";
     } else if (totalCommits > LARGE_REPO_THRESHOLD) {
       recommendedMode = "paginated";
@@ -651,8 +667,21 @@ class GitService {
     options: { chunkSize?: number; firstParent?: boolean } = {},
   ): AsyncGenerator<{ commits: Commit[]; progress: number; total: number }> {
     const git = this.getGit(repoPath);
-    const { chunkSize = 500, firstParent = false } = options;
     const total = await this.getTotalCommitCount(git);
+
+    //  For very large repos, use smaller chunks to avoid string length errors during JSON serialization
+    let defaultChunkSize = 500;
+    if (total > 500000) {
+      // Extremely large repos (e.g., Linux kernel): use very small chunks
+      defaultChunkSize = 50;
+    } else if (total > 100000) {
+      // Very large repos: use smaller chunks
+      defaultChunkSize = 100;
+    } else if (total > 50000) {
+      defaultChunkSize = 250;
+    }
+
+    const { chunkSize = defaultChunkSize, firstParent = false } = options;
 
     let skip = 0;
     while (true) {

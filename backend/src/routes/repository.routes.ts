@@ -528,7 +528,7 @@ repositoryRoutes.post(
   "/repository/clone",
   async (req: Request, res: Response) => {
     try {
-      const { url, shallow = true, token } = req.body;
+      const { url, token } = req.body;
 
       if (!url || typeof url !== "string") {
         res.status(400).json({ error: "URL is required" });
@@ -543,9 +543,8 @@ repositoryRoutes.post(
         return;
       }
 
-      // Clone the repository with specified depth option and optional token
+      // Clone the repository as bare (only .git folder) with optional token
       const repoPath = await gitService.cloneRepository(url, {
-        shallow,
         token: token || undefined,
       });
 
