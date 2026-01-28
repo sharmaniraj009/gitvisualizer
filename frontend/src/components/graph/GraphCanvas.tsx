@@ -304,6 +304,14 @@ export function GraphCanvas() {
     [repository, setSelectedCommit],
   );
 
+  // Handle pane click (clicking on blank canvas)
+  // IMPORTANT: This must be defined BEFORE the early return to maintain consistent hook order
+  const onPaneClick = useCallback(() => {
+    setSelectedCommit(null);
+    // Optionally fit view to show entire graph
+    setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
+  }, [setSelectedCommit, fitView]);
+
   if (!repository) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -339,13 +347,6 @@ export function GraphCanvas() {
       </div>
     );
   }
-
-  // Handle pane click (clicking on blank canvas)
-  const onPaneClick = useCallback(() => {
-    setSelectedCommit(null);
-    // Optionally fit view to show entire graph
-    setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
-  }, [setSelectedCommit, fitView]);
 
   return (
     <div className="w-full h-full relative">
