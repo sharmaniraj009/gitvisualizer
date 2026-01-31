@@ -18,6 +18,7 @@ import { ResizeHandle } from "./components/ui/ResizeHandle";
 import { StatsPanel } from "./components/stats/StatsPanel";
 import { BranchComparePanel } from "./components/compare/BranchComparePanel";
 import { RepositoryBreadcrumb } from "./components/navigation/RepositoryBreadcrumb";
+import { LandingPage } from "./components/landing/LandingPage";
 import { useRepositoryStore } from "./store/repositoryStore";
 import { useRepoUrl } from "./hooks/useRepoUrl";
 
@@ -51,6 +52,7 @@ function App() {
   });
 
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showLanding, setShowLanding] = useState(true);
 
   // Escape key to exit fullscreen
   useEffect(() => {
@@ -92,6 +94,18 @@ function App() {
   // Enable URL-based repository loading (e.g., /github.com/user/repo)
   const { clearUrl } = useRepoUrl();
 
+  // Hide landing page when repository is loaded
+  useEffect(() => {
+    if (repository) {
+      setShowLanding(false);
+    }
+  }, [repository]);
+
+  // Show landing page if no repository and user hasn't started
+  if (showLanding && !repository) {
+    return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-950">
       {/* Progress Bar */}
@@ -118,6 +132,7 @@ function App() {
               onClick={() => {
                 reset();
                 clearUrl();
+                setShowLanding(true);
               }}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity"
               title="Go to home"
