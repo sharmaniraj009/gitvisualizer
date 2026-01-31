@@ -39,6 +39,7 @@ function App() {
     rightPanelOpen,
     closeAllPanels,
     reset,
+    isTemporaryRepo,
   } = useRepositoryStore();
 
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -79,6 +80,41 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  // Auto-cleanup temporary repos on tab close (but not on refresh)
+  useEffect(() => {
+    // Check if this was a page refresh
+    const refreshFlag = sessionStorage.getItem("git-viz-refresh");
+    if (refreshFlag) {
+      const timestamp = parseInt(refreshFlag, 10);
+      // If timestamp is recent (< 5 seconds), it was a refresh
+      if (Date.now() - timestamp < 5000) {
+        sessionStorage.removeItem("git-viz-refresh");
+      }
+    }
+
+    // Handle tab close/navigation
+    const handleBeforeUnload = () => {
+      // Mark this as a potential refresh
+      sessionStorage.setItem("git-viz-refresh", Date.now().toString());
+
+      // Cleanup temporary repository if exists
+      if (repository && isTemporaryRepo && repository.path) {
+        // Use fetch with keepalive to ensure request completes even after unload
+        fetch("/api/repository/cleanup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: repository.path }),
+          keepalive: true,
+        }).catch(() => {
+          // Silently ignore cleanup errors
+        });
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [repository, isTemporaryRepo]);
 
   const handleLeftResize = useCallback((delta: number) => {
     setLeftPanelWidth((prev) =>
@@ -122,12 +158,12 @@ function App() {
     window.history.pushState({}, "", "/app");
   };
 
-  // Handle navigation back to landing page
+  // Handle navigation back to app (clear current repo)
   const handleGoHome = () => {
     reset();
     clearUrl();
-    setShowLanding(true);
-    window.history.pushState({}, "", "/");
+    setShowLanding(false);
+    window.history.pushState({}, "", "/app");
   };
 
   // Show landing page if no repository and at root path
