@@ -29,7 +29,7 @@ export function Legend({
 
   return (
     <div
-      className={`absolute bottom-6 right-6 z-10 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 ${className}`}
+      className={`absolute bottom-3 right-11 z-10 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 ${className}`}
       style={{ maxWidth: "250px" }}
     >
       <div

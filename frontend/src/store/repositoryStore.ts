@@ -44,6 +44,7 @@ import {
   getCommitPatterns,
   getBranchLifespans,
   cleanupRepository,
+  validateRepository,
 } from "../api/gitApi";
 import {
   setGitHubToken as setGitHubTokenApi,
@@ -263,6 +264,52 @@ interface RepositoryState {
   navigateToSubmodule: (submodulePath: string) => Promise<void>;
   navigateBack: () => Promise<void>;
   navigateToRoot: () => void;
+}
+
+// Cache helper functions for cloned repositories
+interface CloneCacheEntry {
+  path: string;
+  timestamp: number;
+}
+
+type CloneCache = Record<string, CloneCacheEntry>;
+
+/**
+ * Get the clone cache from localStorage
+ */
+function getCloneCache(): CloneCache {
+  try {
+    const cached = localStorage.getItem("git-viz-cloned-repos");
+    return cached ? JSON.parse(cached) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save a cloned repository path to the cache
+ */
+function saveToCache(url: string, path: string): void {
+  try {
+    const cache = getCloneCache();
+    cache[url] = { path, timestamp: Date.now() };
+    localStorage.setItem("git-viz-cloned-repos", JSON.stringify(cache));
+  } catch (error) {
+    console.warn("Failed to save clone cache:", error);
+  }
+}
+
+/**
+ * Remove a URL from the clone cache
+ */
+function removeFromCache(url: string): void {
+  try {
+    const cache = getCloneCache();
+    delete cache[url];
+    localStorage.setItem("git-viz-cloned-repos", JSON.stringify(cache));
+  } catch (error) {
+    console.warn("Failed to remove from clone cache:", error);
+  }
 }
 
 export const useRepositoryStore = create<RepositoryState>((set, get) => ({
@@ -604,10 +651,64 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       currentRequestId: requestId,
       error: null,
       selectedCommit: null,
-      loadingMessage: "Cloning repository (bare)...",
+      loadingMessage: "Checking cache...",
       loadingProgress: -1,
     });
+
     try {
+      // Check if we have a cached clone for this URL
+      const cache = getCloneCache();
+      const cached = cache[url];
+
+      if (cached) {
+        set({
+          loadingMessage: "Validating cached repository...",
+          loadingProgress: 10,
+        });
+
+        // Validate that the cached path still exists
+        const isValid = await validateRepository(cached.path);
+
+        if (isValid) {
+          // Use cached repository path
+          set({
+            loadingMessage: "Loading from cache...",
+            loadingProgress: 50,
+          });
+
+          const repository = await loadRepository(cached.path);
+
+          // Check for cancellation
+          if (get().currentRequestId !== requestId) {
+            return;
+          }
+
+          set({ loadingProgress: 90, loadingMessage: "Building graph..." });
+          set({
+            repository: {
+              ...repository,
+              loadedCommitCount: repository.commits.length,
+              totalCommitCount: repository.commits.length,
+            },
+            adjacencyMap: buildAdjacencyMap(repository.commits),
+            isTemporaryRepo: true,
+            isLoading: false,
+            loadingProgress: 100,
+            loadingMessage: "",
+          });
+          return;
+        } else {
+          // Cached path no longer exists, remove from cache
+          removeFromCache(url);
+        }
+      }
+
+      // No valid cache, proceed with fresh clone
+      set({
+        loadingMessage: "Cloning repository (bare)...",
+        loadingProgress: 20,
+      });
+
       set({
         loadingMessage: "Downloading repository data...",
         loadingProgress: 30,
@@ -653,6 +754,9 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
         loadingProgress: 100,
         loadingMessage: "",
       });
+
+      // Save to cache for future reuse
+      saveToCache(url, repository.path);
     } catch (error) {
       // Check if this is an auth error
       if (error instanceof AuthRequiredError) {
