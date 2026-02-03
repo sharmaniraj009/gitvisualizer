@@ -11,10 +11,13 @@
     "dev:backend": "npm run dev --workspace=backend",
     "dev:frontend": "npm run dev --workspace=frontend",
     "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
-    "start": "npm run start --workspace=backend"
+    "start": "npm run start --workspace=backend",
+    "format": "prettier --write \"{frontend,backend}/src/**/*.{js,ts,json,jsx,tsx}\"",
+    "format:check": "prettier --check \"{frontend,backend}/src/**/*.{js,ts,json,jsx,tsx}\""
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "prettier": "3.8.1"
   },
   "dependencies": {
     "lucide-react": "^0.563.0",
